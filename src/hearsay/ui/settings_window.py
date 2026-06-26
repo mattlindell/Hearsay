@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from tkinter import filedialog
 
 import customtkinter as ctk
@@ -25,7 +26,7 @@ class SettingsWindow(ctk.CTkToplevel):
     def __init__(self, master: ctk.CTk, config_manager: ConfigManager) -> None:
         super().__init__(master)
         self.title(f"{APP_NAME} Settings")
-        self.geometry("550x520")
+        self.geometry("550x620")
         self.resizable(False, False)
 
         self._config_manager = config_manager
@@ -131,6 +132,79 @@ class SettingsWindow(ctk.CTkToplevel):
             dir_frame, text="Browse", width=70, command=self._browse
         ).pack(side="left")
 
+        # ── LLM Summarization ──
+        ctk.CTkLabel(
+            scroll, text="LLM Summarization", font=("Segoe UI", 14, "bold")
+        ).pack(anchor="w", pady=(20, 5))
+
+        self._summ_enabled_var = ctk.BooleanVar(value=self._config.summarize_enabled)
+        ctk.CTkCheckBox(
+            scroll,
+            text="Summarize transcripts after recording",
+            variable=self._summ_enabled_var,
+        ).pack(anchor="w", padx=15, pady=(0, 5))
+
+        ctk.CTkLabel(
+            scroll,
+            text="OpenAI-compatible endpoint (vLLM, llama.cpp, Ollama, LM Studio, ...)",
+            font=("Segoe UI", 10),
+            text_color="gray",
+        ).pack(anchor="w", padx=15)
+
+        ctk.CTkLabel(scroll, text="Base URL", font=("Segoe UI", 11)).pack(
+            anchor="w", padx=15, pady=(8, 0)
+        )
+        self._summ_url_var = ctk.StringVar(value=self._config.summarize_base_url)
+        ctk.CTkEntry(
+            scroll,
+            textvariable=self._summ_url_var,
+            width=440,
+            font=("Consolas", 11),
+            placeholder_text="http://192.168.1.50:8000/v1",
+        ).pack(anchor="w", padx=15, pady=(0, 4))
+
+        ctk.CTkLabel(scroll, text="Model", font=("Segoe UI", 11)).pack(
+            anchor="w", padx=15, pady=(4, 0)
+        )
+        self._summ_model_var = ctk.StringVar(value=self._config.summarize_model)
+        ctk.CTkEntry(
+            scroll,
+            textvariable=self._summ_model_var,
+            width=440,
+            font=("Consolas", 11),
+            placeholder_text="qwen2.5-instruct",
+        ).pack(anchor="w", padx=15, pady=(0, 4))
+
+        ctk.CTkLabel(scroll, text="API Key (optional)", font=("Segoe UI", 11)).pack(
+            anchor="w", padx=15, pady=(4, 0)
+        )
+        self._summ_key_var = ctk.StringVar(value=self._config.summarize_api_key)
+        ctk.CTkEntry(
+            scroll,
+            textvariable=self._summ_key_var,
+            width=440,
+            font=("Consolas", 11),
+            show="*",
+        ).pack(anchor="w", padx=15, pady=(0, 4))
+
+        ctk.CTkLabel(scroll, text="Summary Prompt", font=("Segoe UI", 11)).pack(
+            anchor="w", padx=15, pady=(4, 0)
+        )
+        self._summ_prompt_box = ctk.CTkTextbox(scroll, width=440, height=120)
+        self._summ_prompt_box.pack(anchor="w", padx=15, pady=(0, 4))
+        self._summ_prompt_box.insert("1.0", self._config.summarize_prompt)
+
+        test_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        test_frame.pack(fill="x", padx=15, pady=(2, 8))
+        ctk.CTkButton(
+            test_frame, text="Test Connection", width=130, command=self._test_connection
+        ).pack(side="left")
+        self._summ_test_label = ctk.CTkLabel(
+            test_frame, text="", font=("Segoe UI", 11), text_color="gray", wraplength=280,
+            justify="left",
+        )
+        self._summ_test_label.pack(side="left", padx=10)
+
         # ── Buttons ──
         btn_frame = ctk.CTkFrame(self)
         btn_frame.pack(fill="x", padx=20, pady=(0, 15))
@@ -151,6 +225,25 @@ class SettingsWindow(ctk.CTkToplevel):
         if path:
             self._dir_var.set(path)
 
+    def _test_connection(self) -> None:
+        """Test the summarization endpoint on a background thread."""
+        self._summ_test_label.configure(text="Testing...", text_color="gray")
+
+        base_url = self._summ_url_var.get()
+        model = self._summ_model_var.get()
+        api_key = self._summ_key_var.get()
+
+        def run() -> None:
+            from hearsay.summarize import LLMSummarizer
+
+            ok, msg = LLMSummarizer(
+                base_url=base_url, model=model, api_key=api_key
+            ).test_connection()
+            color = "#4da6ff" if ok else "red"
+            self.after(0, lambda: self._summ_test_label.configure(text=msg, text_color=color))
+
+        threading.Thread(target=run, daemon=True, name="SummarizeTest").start()
+
     def _save(self) -> None:
         self._config.audio_source = self._source_var.get()
         self._config.model_name = self._model_var.get()
@@ -159,6 +252,13 @@ class SettingsWindow(ctk.CTkToplevel):
         self._config.language = self._lang_var.get()
         self._config.vad_filter = self._vad_var.get()
         self._config.output_dir = self._dir_var.get()
+        self._config.summarize_enabled = self._summ_enabled_var.get()
+        self._config.summarize_base_url = self._summ_url_var.get().strip()
+        self._config.summarize_model = self._summ_model_var.get().strip()
+        self._config.summarize_api_key = self._summ_key_var.get().strip()
+        prompt = self._summ_prompt_box.get("1.0", "end").strip()
+        if prompt:
+            self._config.summarize_prompt = prompt
         self._config_manager.save()
         log.info("Settings saved")
         self.grab_release()

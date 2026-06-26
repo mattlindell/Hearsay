@@ -12,7 +12,8 @@ No API calls, no cloud services -- everything runs on your machine.
 - **Microphone capture** -- record from your mic, or mix both sources together
 - **Real-time transcription** -- text appears in a live view window as you record
 - **Local AI** -- uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2), no internet required after model download
-- **GPU + CPU** -- auto-detects NVIDIA GPU; works on CPU with INT8 quantization
+- **GPU + CPU** -- auto-detects NVIDIA GPU (via CTranslate2 + `nvidia-smi`, no PyTorch); works on CPU with INT8 quantization
+- **LLM summarization** -- optionally hand the finished transcript to any OpenAI-compatible endpoint (a local qwen/llama server, vLLM, Ollama, LM Studio, etc.) for meeting notes
 - **Markdown output** -- timestamped `.md` transcripts saved to your chosen directory
 - **System tray app** -- runs quietly in the tray, right-click to start/stop recording
 - **First-run wizard** -- detects hardware, downloads the right model, configures everything
@@ -27,12 +28,25 @@ No API calls, no cloud services -- everything runs on your machine.
 git clone https://github.com/parkscloud/Hearsay.git
 cd hearsay
 
-# Install dependencies
-pip install -r requirements.txt
+# Install the package (CPU works out of the box). The editable install puts
+# the `hearsay` package on your path so `python -m hearsay` works anywhere.
+pip install -e .
 
 # Run
 python -m hearsay
 ```
+
+**For NVIDIA GPU acceleration**, install with the `gpu` extra to also pull in
+the CUDA libraries (no PyTorch needed):
+
+```bash
+pip install -e ".[gpu]"
+```
+
+This pulls in CUDA 12 cuBLAS + cuDNN 9 wheels. You just need a recent NVIDIA
+driver (`nvidia-smi` must work). Hearsay detects the GPU at startup and, if the
+CUDA libraries are missing at load time, falls back to CPU automatically instead
+of failing.
 
 On first launch, the setup wizard walks you through:
 1. Hardware detection (GPU vs CPU)
@@ -48,19 +62,19 @@ Download the latest installer from the [Releases](https://github.com/parkscloud/
 
 ### Silent install (RMM / SCCM / Intune)
 
-```
+```bash
 HearsaySetup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ```
 
 Installs to `C:\Program Files\Hearsay` for all users. Hearsay starts automatically at login. To skip auto-start:
 
-```
+```bash
 HearsaySetup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TASKS=""
 ```
 
 Uninstall silently:
 
-```
+```bash
 "C:\Program Files\Hearsay\unins000.exe" /VERYSILENT
 ```
 
@@ -70,6 +84,30 @@ Uninstall silently:
 2. Choose **Start Recording** > **System Audio**, **Microphone**, or **Both**
 3. Audio is transcribed in real-time -- open **Live Transcript** to watch
 4. **Stop Recording** when done -- a timestamped `.md` file is saved to your output directory
+
+## LLM Summarization
+
+After a recording is transcribed and cleaned, Hearsay can send the transcript to
+an OpenAI-compatible chat-completions endpoint and prepend a structured **Summary**
+section (overview, key points, decisions, action items, open questions) above the
+full transcript. This works with any server that speaks the OpenAI API -- a local
+**qwen**/llama server, **vLLM**, **llama.cpp**, **Ollama** (OpenAI mode),
+**LM Studio**, etc. Nothing leaves your network if your endpoint is local.
+
+Configure it under **Settings → LLM Summarization**:
+
+| Field | Example | Notes |
+|-------|---------|-------|
+| Base URL | `http://192.168.1.50:8000/v1` | The API base; `/chat/completions` is appended automatically |
+| Model | `qwen2.5-instruct` | Whatever name your server expects |
+| API Key | *(blank)* | Usually unused for local servers; sent as a Bearer token if set |
+| Summary Prompt | *(editable default)* | The system prompt that shapes the notes |
+
+Use **Test Connection** to verify the endpoint, model, and auth before recording.
+Summarization runs on a background thread after the transcript is saved -- if it
+fails (server down, wrong model), the transcript is never lost; the error is shown
+in the live view and logged. Because the full transcript is sent in one request,
+point Hearsay at a model with a large enough context window for long meetings.
 
 ## Hardware Requirements
 
@@ -83,7 +121,7 @@ A 1-hour recording transcribes in ~7 min on GPU or ~60 min on CPU.
 
 ## Project Structure
 
-```
+```text
 src/hearsay/
 ├── __init__.py              # Version string
 ├── __main__.py              # Entry point
@@ -96,13 +134,15 @@ src/hearsay/
 │   ├── mixer.py             # Mix two audio streams
 │   └── resampler.py         # Resample to 16kHz mono float32
 ├── transcription/
-│   ├── gpu_detect.py        # Detect CUDA, recommend model
+│   ├── gpu_detect.py        # Detect CUDA via CTranslate2 + nvidia-smi (no torch)
 │   ├── model_manager.py     # Download and cache Whisper models
-│   ├── engine.py            # TranscriptionEngine (faster-whisper)
+│   ├── engine.py            # TranscriptionEngine (faster-whisper, CPU fallback)
 │   └── pipeline.py          # TranscriptionPipeline thread
+├── summarize/
+│   └── client.py            # LLMSummarizer (OpenAI-compatible endpoint)
 ├── output/
 │   ├── formatter.py         # Timestamp formatting
-│   └── markdown_writer.py   # Write .md transcripts
+│   └── markdown_writer.py   # Write .md transcripts + summary section
 ├── ui/
 │   ├── tray.py              # System tray icon (pystray)
 │   ├── wizard.py            # First-run setup wizard
