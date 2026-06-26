@@ -14,6 +14,7 @@ from hearsay.constants import (
     AUDIO_SOURCE_BOTH,
     AUDIO_SOURCE_MIC,
     AUDIO_SOURCE_SYSTEM,
+    DEFAULT_SUMMARIZE_PROMPT,
     MODEL_TABLE,
 )
 
@@ -256,9 +257,10 @@ class SettingsWindow(ctk.CTkToplevel):
         self._config.summarize_base_url = self._summ_url_var.get().strip()
         self._config.summarize_model = self._summ_model_var.get().strip()
         self._config.summarize_api_key = self._summ_key_var.get().strip()
+        # Persist the prompt; if the user cleared it, restore the default rather
+        # than saving an empty prompt (which would yield a useless summary).
         prompt = self._summ_prompt_box.get("1.0", "end").strip()
-        if prompt:
-            self._config.summarize_prompt = prompt
+        self._config.summarize_prompt = prompt or DEFAULT_SUMMARIZE_PROMPT
         self._config_manager.save()
         log.info("Settings saved")
         self.grab_release()

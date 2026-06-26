@@ -143,7 +143,11 @@ class MarkdownWriter:
         body = content[header_end:]
 
         block = f"{summary}\n\n## Transcript\n\n"
-        self.file_path.write_text(header + block + body, encoding="utf-8")
+        # Write to a temp file and atomically replace, so a failure mid-write
+        # can't truncate or lose the transcript that was already saved.
+        tmp_path = self.file_path.with_name(self.file_path.name + ".tmp")
+        tmp_path.write_text(header + block + body, encoding="utf-8")
+        tmp_path.replace(self.file_path)
         log.info("Summary prepended to %s", self.file_path)
 
     def post_process(self) -> None:

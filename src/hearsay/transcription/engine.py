@@ -11,6 +11,17 @@ from hearsay.utils.paths import get_models_dir
 
 log = logging.getLogger(__name__)
 
+# Substrings that mark a CUDA/GPU initialization failure from CTranslate2 (e.g.
+# "CUDA failed with error ...", "This CTranslate2 package was not compiled with
+# CUDA support", missing cuBLAS/cuDNN). Used to decide whether a failed cuda
+# load should retry on CPU rather than masking an unrelated error.
+_CUDA_FAILURE_MARKERS = ("cuda", "cublas", "cudnn", "cudart", "gpu")
+
+
+def _is_cuda_init_failure(exc: Exception) -> bool:
+    """True if *exc* looks like a CUDA/GPU init failure (vs. a bad model, etc.)."""
+    return any(marker in str(exc).lower() for marker in _CUDA_FAILURE_MARKERS)
+
 
 @dataclass
 class TranscriptionResult:
@@ -63,8 +74,8 @@ class TranscriptionEngine:
                 compute_type=self.compute_type,
                 download_root=str(get_models_dir()),
             )
-        except Exception:
-            if self.device == "cuda":
+        except Exception as e:
+            if self.device == "cuda" and _is_cuda_init_failure(e):
                 log.warning(
                     "CUDA model load failed; falling back to CPU (int8). "
                     "Install nvidia-cublas-cu12 and nvidia-cudnn-cu12 for GPU "

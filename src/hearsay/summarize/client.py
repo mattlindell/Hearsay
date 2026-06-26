@@ -74,7 +74,7 @@ class LLMSummarizer:
 
         try:
             with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
-                body = resp.read().decode("utf-8")
+                body = resp.read().decode("utf-8", errors="replace")
         except urllib.error.HTTPError as e:
             detail = ""
             try:

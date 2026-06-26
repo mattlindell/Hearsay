@@ -114,8 +114,11 @@ point Hearsay at a model with a large enough context window for long meetings.
 | Setup | Recommended Model | Speed |
 |-------|-------------------|-------|
 | NVIDIA GPU (6+ GB VRAM) | `turbo` (float16) | ~8x real-time |
-| NVIDIA GPU (4 GB VRAM) | `small.en` (float16) | ~4x real-time |
+| NVIDIA GPU (2–5 GB VRAM) | `small.en` (float16) | ~4x real-time |
+| NVIDIA GPU (<2 GB VRAM) | `tiny.en` (float16) | ~6x real-time |
 | CPU only | `small.en` (int8) | ~1x real-time |
+
+The setup wizard auto-selects the recommended model from detected VRAM; you can override it any time in **Settings**.
 
 A 1-hour recording transcribes in ~7 min on GPU or ~60 min on CPU.
 

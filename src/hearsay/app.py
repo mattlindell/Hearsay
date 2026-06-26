@@ -225,8 +225,14 @@ class HearsayApp:
         engine: TranscriptionEngine | None,
         writer: MarkdownWriter | None,
         start_time: float | None,
+        summarize: bool = True,
     ) -> None:
-        """Blocking recording teardown — runs on a background thread."""
+        """Blocking recording teardown — runs on a background thread.
+
+        ``summarize`` is set False on the quit path, where teardown runs
+        synchronously on the main thread: a slow or unreachable LLM endpoint
+        must not hold app shutdown open for the full summarization timeout.
+        """
         # 1. Stop recorder first so it flushes remaining audio to the queue.
         if recorder:
             recorder.stop()
@@ -281,7 +287,9 @@ class HearsayApp:
             writer.post_process()
 
             # Optional: summarize via an OpenAI-compatible LLM endpoint.
-            self._maybe_summarize(writer)
+            # Skipped on the quit path so a slow endpoint can't block shutdown.
+            if summarize:
+                self._maybe_summarize(writer)
 
         # Insert session separator in live view
         end_time = time.strftime("%I:%M %p")
@@ -409,12 +417,14 @@ class HearsayApp:
         """Clean shutdown."""
         log.info("Shutting down %s", APP_NAME)
 
-        # Run teardown synchronously — responsiveness doesn't matter at exit
+        # Run teardown synchronously — responsiveness doesn't matter at exit.
+        # Skip summarization so a slow LLM endpoint can't stall shutdown.
         if self._recording:
             self._recording = False
             self._teardown_recording(
                 self._recorder, self._pipeline, self._engine,
                 self._writer, self._recording_start_time,
+                summarize=False,
             )
             self._recorder = None
             self._pipeline = None
