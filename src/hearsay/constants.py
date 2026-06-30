@@ -44,5 +44,25 @@ ICON_COLOR_PROCESSING = (50, 150, 220)  # Blue
 # Transcript formatting
 PARAGRAPH_GAP_S = 2.0  # Silence gap (seconds) that triggers a paragraph break
 
+# LLM summarization (OpenAI-compatible chat completions endpoint)
+DEFAULT_SUMMARIZE_TEMPERATURE = 0.3
+DEFAULT_SUMMARIZE_MAX_TOKENS = 2048
+DEFAULT_SUMMARIZE_TIMEOUT_S = 300  # local models on big transcripts can be slow
+DEFAULT_SUMMARIZE_PROMPT = (
+    "You are an expert meeting-notes assistant. You are given the raw transcript "
+    "of a recorded meeting or conversation produced by automatic speech "
+    "recognition, so it may contain transcription errors, filler words, and no "
+    "speaker labels. Produce clear, well-structured Markdown notes with these "
+    "sections, omitting any that do not apply:\n\n"
+    "## Summary\nA concise 2-4 sentence overview of what was discussed.\n\n"
+    "## Key Points\nThe most important points as a bulleted list.\n\n"
+    "## Decisions\nAny decisions that were made.\n\n"
+    "## Action Items\nConcrete next steps as a checklist (`- [ ]`), with the "
+    "responsible person in **bold** when it can be inferred.\n\n"
+    "## Open Questions\nUnresolved questions or follow-ups.\n\n"
+    "Be faithful to the transcript. Do not invent details. If something is "
+    "unclear, say so rather than guessing."
+)
+
 # UI
 LIVE_VIEW_POLL_MS = 250  # Poll transcript queue every 250ms

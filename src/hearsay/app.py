@@ -225,8 +225,14 @@ class HearsayApp:
         engine: TranscriptionEngine | None,
         writer: MarkdownWriter | None,
         start_time: float | None,
+        summarize: bool = True,
     ) -> None:
-        """Blocking recording teardown — runs on a background thread."""
+        """Blocking recording teardown — runs on a background thread.
+
+        ``summarize`` is set False on the quit path, where teardown runs
+        synchronously on the main thread: a slow or unreachable LLM endpoint
+        must not hold app shutdown open for the full summarization timeout.
+        """
         # 1. Stop recorder first so it flushes remaining audio to the queue.
         if recorder:
             recorder.stop()
@@ -280,6 +286,11 @@ class HearsayApp:
             ))
             writer.post_process()
 
+            # Optional: summarize via an OpenAI-compatible LLM endpoint.
+            # Skipped on the quit path so a slow endpoint can't block shutdown.
+            if summarize:
+                self._maybe_summarize(writer)
+
         # Insert session separator in live view
         end_time = time.strftime("%I:%M %p")
         safe_after(self._root, 0, lambda: (
@@ -290,6 +301,57 @@ class HearsayApp:
         safe_after(self._root, 0, lambda: (
             self._live_view.set_status("Idle") if self._live_view else None
         ))
+
+    def _maybe_summarize(self, writer: MarkdownWriter) -> None:
+        """Summarize the finished transcript via the configured LLM, if enabled.
+
+        Runs on the teardown background thread. Failures are logged and surfaced
+        in the live view but never propagate -- a bad summary must not lose the
+        transcript that was already saved.
+        """
+        cfg = self._config
+        if not cfg.summarize_enabled:
+            return
+        if not cfg.summarize_base_url.strip() or not cfg.summarize_model.strip():
+            log.warning("Summarization enabled but base URL or model is unset; skipping")
+            return
+
+        transcript = writer.read_transcript_body()
+        if not transcript:
+            log.info("No transcript text to summarize; skipping")
+            return
+
+        safe_after(self._root, 0, lambda: (
+            self._live_view.set_status("Summarizing transcript...")
+            if self._live_view else None
+        ))
+
+        from hearsay.summarize import LLMSummarizer, SummarizeError
+
+        summarizer = LLMSummarizer(
+            base_url=cfg.summarize_base_url,
+            model=cfg.summarize_model,
+            api_key=cfg.summarize_api_key,
+            prompt=cfg.summarize_prompt,
+            temperature=cfg.summarize_temperature,
+            max_tokens=cfg.summarize_max_tokens,
+            timeout_s=cfg.summarize_timeout_s,
+        )
+        try:
+            summary = summarizer.summarize(transcript)
+            writer.prepend_summary(summary)
+            log.info("Transcript summarized successfully")
+            safe_after(self._root, 0, lambda: (
+                self._live_view.set_status("Summary added") if self._live_view else None
+            ))
+        except SummarizeError as e:
+            log.error("Summarization failed: %s", e)
+            safe_after(self._root, 0, lambda msg=str(e): (
+                self._live_view.set_status(f"Summary failed: {msg[:60]}")
+                if self._live_view else None
+            ))
+        except Exception:
+            log.error("Unexpected error during summarization", exc_info=True)
 
     def _poll_transcripts(self) -> None:
         """Poll the transcript queue and update live view + markdown writer."""
@@ -355,12 +417,14 @@ class HearsayApp:
         """Clean shutdown."""
         log.info("Shutting down %s", APP_NAME)
 
-        # Run teardown synchronously — responsiveness doesn't matter at exit
+        # Run teardown synchronously — responsiveness doesn't matter at exit.
+        # Skip summarization so a slow LLM endpoint can't stall shutdown.
         if self._recording:
             self._recording = False
             self._teardown_recording(
                 self._recorder, self._pipeline, self._engine,
                 self._writer, self._recording_start_time,
+                summarize=False,
             )
             self._recorder = None
             self._pipeline = None

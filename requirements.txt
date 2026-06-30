@@ -1,3 +1,6 @@
+# Base install runs Whisper on CPU (int8) out of the box and needs no GPU
+# libraries or PyTorch. For NVIDIA GPU acceleration, additionally install
+# requirements-gpu.txt (see README "Hardware Requirements").
 faster-whisper>=1.0.0
 PyAudioWPatch>=0.2.12
 sounddevice>=0.4.6

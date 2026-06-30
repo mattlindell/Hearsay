@@ -11,6 +11,17 @@ from hearsay.utils.paths import get_models_dir
 
 log = logging.getLogger(__name__)
 
+# Substrings that mark a CUDA/GPU initialization failure from CTranslate2 (e.g.
+# "CUDA failed with error ...", "This CTranslate2 package was not compiled with
+# CUDA support", missing cuBLAS/cuDNN). Used to decide whether a failed cuda
+# load should retry on CPU rather than masking an unrelated error.
+_CUDA_FAILURE_MARKERS = ("cuda", "cublas", "cudnn", "cudart", "gpu")
+
+
+def _is_cuda_init_failure(exc: Exception) -> bool:
+    """True if *exc* looks like a CUDA/GPU init failure (vs. a bad model, etc.)."""
+    return any(marker in str(exc).lower() for marker in _CUDA_FAILURE_MARKERS)
+
 
 @dataclass
 class TranscriptionResult:
@@ -42,7 +53,12 @@ class TranscriptionEngine:
         self._model = None
 
     def load(self) -> None:
-        """Load the Whisper model into memory."""
+        """Load the Whisper model into memory.
+
+        If a CUDA load fails (e.g. the NVIDIA CUDA libraries aren't installed),
+        fall back to CPU/int8 rather than aborting the recording. The active
+        ``device``/``compute_type`` are updated to reflect what actually loaded.
+        """
         from faster_whisper import WhisperModel
 
         log.info(
@@ -51,13 +67,36 @@ class TranscriptionEngine:
             self.device,
             self.compute_type,
         )
-        self._model = WhisperModel(
-            self.model_name,
-            device=self.device,
-            compute_type=self.compute_type,
-            download_root=str(get_models_dir()),
+        try:
+            self._model = WhisperModel(
+                self.model_name,
+                device=self.device,
+                compute_type=self.compute_type,
+                download_root=str(get_models_dir()),
+            )
+        except Exception as e:
+            if self.device == "cuda" and _is_cuda_init_failure(e):
+                log.warning(
+                    "CUDA model load failed; falling back to CPU (int8). "
+                    "Install nvidia-cublas-cu12 and nvidia-cudnn-cu12 for GPU "
+                    "inference.",
+                    exc_info=True,
+                )
+                self.device = "cpu"
+                self.compute_type = "int8"
+                self._model = WhisperModel(
+                    self.model_name,
+                    device=self.device,
+                    compute_type=self.compute_type,
+                    download_root=str(get_models_dir()),
+                )
+            else:
+                raise
+        log.info(
+            "Model loaded successfully (device=%s, compute=%s)",
+            self.device,
+            self.compute_type,
         )
-        log.info("Model loaded successfully")
 
     def transcribe(
         self,
