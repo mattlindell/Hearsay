@@ -23,6 +23,7 @@ Run from source: `python -m hearsay` with `src` on `PYTHONPATH`.
 
 - Bug and feature tracking uses GitHub Issues (`gh issue ...`); release notes reference them ("closes #N"). Scratch incident write-ups (`ISSUE_*.md` at the repo root) are local working notes — gitignored, leave them untracked. Durable resolutions belong in GitHub issues, release notes, and commit messages.
 - Stage files explicitly when committing; avoid `git add -A`.
+- Keep documentation consistent: when changing the app or cutting a release, fix any drift across `README.md`, `RELEASING.md`, and this file in the same pass — stale version examples, build/release steps, and the `src/` file tree (add new modules, drop removed ones).
 - Verify changes with `python tests/test_pipeline_writer.py` (fast; stub engine, no hardware). Before releasing anything that touches audio, also run `python scripts/manual_device_check.py` (~3 min; records real devices while playing TTS through the speakers).
 - **The app may be recording a real meeting while you work.** Before launching test instances, running the device check, or playing TTS audio, confirm no session is active — check for recent `Chunk N transcribed` lines in `%APPDATA%\Hearsay\logs\hearsay_<date>.log` (that log is also the first stop when diagnosing a bad session). Kill test instances by PID only; `taskkill /IM Hearsay.exe` would hit the user's real instance.
 

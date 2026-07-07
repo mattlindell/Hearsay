@@ -101,7 +101,6 @@ src/hearsay/
 ├── audio/
 │   ├── devices.py           # Enumerate loopback + mic devices
 │   ├── recorder.py          # AudioRecorder thread
-│   ├── mixer.py             # Mix two audio streams
 │   └── resampler.py         # Resample to 16kHz mono float32
 ├── transcription/
 │   ├── gpu_detect.py        # Detect CUDA, recommend model
@@ -117,6 +116,7 @@ src/hearsay/
 │   ├── live_view.py         # Live transcript window
 │   ├── about_window.py      # About dialog
 │   ├── settings_window.py   # Settings editor
+│   ├── window_icon.py       # Title-bar icon helper (Hearsay logo)
 │   ├── icons.py             # Programmatic icon generation
 │   └── theme.py             # customtkinter theme
 └── utils/
