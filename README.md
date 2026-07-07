@@ -31,7 +31,7 @@ No API calls, no cloud services -- everything runs on your machine.
 ```bash
 # Clone the repo
 git clone https://github.com/parkscloud/Hearsay.git
-cd hearsay
+cd Hearsay
 
 # Install dependencies
 pip install -r requirements.txt

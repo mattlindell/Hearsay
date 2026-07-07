@@ -7,7 +7,7 @@
 ; installed app. Generated once with uuid4 — do not regenerate.
 AppId={{50888B37-B632-4A7D-9670-AC5DCD3985C4}
 AppName=Hearsay
-AppVersion=1.1.2
+AppVersion=1.1.3
 AppPublisher=Hearsay
 AppPublisherURL=https://github.com/parkscloud/Hearsay
 DefaultDirName={autopf}\Hearsay
