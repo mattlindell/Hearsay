@@ -7,6 +7,7 @@ from tkinter import filedialog
 
 import customtkinter as ctk
 
+from hearsay.audio.devices import list_input_devices, list_loopback_devices
 from hearsay.config import ConfigManager
 from hearsay.constants import (
     APP_NAME,
@@ -17,6 +18,42 @@ from hearsay.constants import (
 )
 
 log = logging.getLogger(__name__)
+
+# Picker label for "let the app pick the system default device".
+_AUTO_DEVICE = "Automatic (system default)"
+
+
+def _device_choices(current: str, names: list[str]) -> tuple[dict[str, str], list[str], str]:
+    """Build (label->stored-name map, ordered labels, initial label) for a picker.
+
+    An empty stored name maps to the 'Automatic' label. A previously-saved
+    device that is currently absent stays selectable (marked 'not connected')
+    so opening Settings never silently discards the saved choice.
+    """
+    mapping: dict[str, str] = {_AUTO_DEVICE: ""}
+    choices: list[str] = [_AUTO_DEVICE]
+    for nm in names:
+        if nm not in mapping:
+            mapping[nm] = nm
+            choices.append(nm)
+    initial = _AUTO_DEVICE
+    if current:
+        match = next((lbl for lbl, val in mapping.items() if val == current), None)
+        if match is None:
+            match = f"{current} (not connected)"
+            mapping[match] = current
+            choices.append(match)
+        initial = match
+    return mapping, choices, initial
+
+
+def _safe_device_names(list_fn) -> list[str]:
+    """Enumerate device names, returning [] if the audio backend errors out."""
+    try:
+        return [d.name for d in list_fn()]
+    except Exception:
+        log.warning("Device enumeration failed", exc_info=True)
+        return []
 
 
 class SettingsWindow(ctk.CTkToplevel):
@@ -59,6 +96,30 @@ class SettingsWindow(ctk.CTkToplevel):
             ctk.CTkRadioButton(
                 scroll, text=label, variable=self._source_var, value=value
             ).pack(anchor="w", padx=15, pady=2)
+
+        # ── Microphone device ──
+        ctk.CTkLabel(scroll, text="Microphone", font=("Segoe UI", 14, "bold")).pack(
+            anchor="w", pady=(15, 5)
+        )
+        self._mic_map, mic_choices, mic_initial = _device_choices(
+            self._config.mic_device_name, _safe_device_names(list_input_devices)
+        )
+        self._mic_var = ctk.StringVar(value=mic_initial)
+        ctk.CTkOptionMenu(
+            scroll, variable=self._mic_var, values=mic_choices, width=360
+        ).pack(anchor="w", padx=15)
+
+        # ── System audio device ──
+        ctk.CTkLabel(scroll, text="System Audio Device", font=("Segoe UI", 14, "bold")).pack(
+            anchor="w", pady=(15, 5)
+        )
+        self._sys_map, sys_choices, sys_initial = _device_choices(
+            self._config.loopback_device_name, _safe_device_names(list_loopback_devices)
+        )
+        self._sys_var = ctk.StringVar(value=sys_initial)
+        ctk.CTkOptionMenu(
+            scroll, variable=self._sys_var, values=sys_choices, width=360
+        ).pack(anchor="w", padx=15)
 
         # ── Model ──
         ctk.CTkLabel(scroll, text="Whisper Model", font=("Segoe UI", 14, "bold")).pack(
@@ -153,6 +214,8 @@ class SettingsWindow(ctk.CTkToplevel):
 
     def _save(self) -> None:
         self._config.audio_source = self._source_var.get()
+        self._config.mic_device_name = self._mic_map.get(self._mic_var.get(), "")
+        self._config.loopback_device_name = self._sys_map.get(self._sys_var.get(), "")
         self._config.model_name = self._model_var.get()
         self._config.compute_type = self._compute_var.get()
         self._config.device = self._device_var.get()

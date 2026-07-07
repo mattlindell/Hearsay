@@ -19,6 +19,8 @@ from hearsay.constants import (
     CHUNK_DURATION_S,
     OVERLAP_DURATION_S,
     SAMPLE_RATE,
+    SILENCE_ALERT_S,
+    SILENCE_REALERT_S,
     SILENCE_RMS_FLOOR,
 )
 from hearsay.utils.threading_utils import StoppableThread
@@ -87,6 +89,43 @@ class _SourceBuffer:
             return data
 
 
+class _SilenceMonitor:
+    """Decide when to raise a 'no audio captured' alert during a session.
+
+    A session whose device is muted, unplugged, blocked, or wedged opens
+    cleanly and reports 'active' while delivering no audio — otherwise
+    invisible until the session ends. This tracks wall-clock time since the
+    last non-silent window and signals an alert after ``alert_s`` of silence,
+    then re-signals every ``repeat_s`` while capture stays silent. Pure and
+    time-injected (all times are monotonic seconds passed in) so it unit-tests
+    without threads or hardware.
+    """
+
+    def __init__(self, alert_s: float, repeat_s: float) -> None:
+        self._alert_s = alert_s
+        self._repeat_s = repeat_s
+        self.last_audio = 0.0
+        self._last_alert: float | None = None
+
+    def start(self, now: float) -> None:
+        self.last_audio = now
+        self._last_alert = None
+
+    def note_audio(self, now: float) -> None:
+        """Record that non-silent audio arrived, re-arming the alert."""
+        self.last_audio = now
+        self._last_alert = None
+
+    def should_alert(self, now: float) -> bool:
+        """True when the caller should raise (or repeat) the no-audio alert."""
+        if now - self.last_audio < self._alert_s:
+            return False
+        if self._last_alert is None or (now - self._last_alert) >= self._repeat_s:
+            self._last_alert = now
+            return True
+        return False
+
+
 class AudioRecorder(StoppableThread):
     """Record audio and push per-source AudioChunk windows to a queue.
 
@@ -100,8 +139,16 @@ class AudioRecorder(StoppableThread):
         source: One of 'system', 'microphone', 'both'.
         loopback_device_index: PyAudioWPatch device index for loopback.
         mic_device_index: sounddevice device index for mic.
+        mic_device_name: Configured microphone name, resolved to a device at
+            open time (empty = system default). Preferred over mic_device_index.
+        loopback_device_name: Configured system-audio device name (empty =
+            default speakers).
         on_fatal: Called from this thread when recording dies and no
             further audio will be captured. Not called for user stops.
+        on_no_audio: Called from this thread when the session has captured no
+            audio for SILENCE_ALERT_S (device muted, unplugged, blocked, or
+            wedged). Recording continues so it recovers if the device returns;
+            called again every SILENCE_REALERT_S while still silent.
     """
 
     def __init__(
@@ -114,7 +161,10 @@ class AudioRecorder(StoppableThread):
         loopback_rate: int = 48000,
         mic_channels: int = 1,
         mic_rate: int = 44100,
+        mic_device_name: str = "",
+        loopback_device_name: str = "",
         on_fatal: Callable[[Exception], None] | None = None,
+        on_no_audio: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(name="AudioRecorder")
         self.audio_queue = audio_queue
@@ -125,7 +175,10 @@ class AudioRecorder(StoppableThread):
         self.loopback_rate = loopback_rate
         self.mic_channels = mic_channels
         self.mic_rate = mic_rate
+        self.mic_device_name = mic_device_name
+        self.loopback_device_name = loopback_device_name
         self.on_fatal = on_fatal
+        self.on_no_audio = on_no_audio
 
     def run(self) -> None:
         log.info("AudioRecorder started (source=%s)", self.source)
@@ -166,11 +219,12 @@ class AudioRecorder(StoppableThread):
             p.terminate()
 
     def _record_mic(self) -> None:
-        """Record microphone via sounddevice (callback mode)."""
+        """Record microphone via sounddevice (callback mode, WASAPI)."""
         import sounddevice as sd
 
+        index, rate = self._resolve_mic_sounddevice()
+        channels = 1  # capture mono; PortAudio/WASAPI downmixes multi-channel mics
         buf = _SourceBuffer(AUDIO_SOURCE_MIC)
-        rate, channels = self.mic_rate, self.mic_channels
 
         def callback(indata: np.ndarray, frames: int, time_info: object, status: object) -> None:
             try:
@@ -180,7 +234,7 @@ class AudioRecorder(StoppableThread):
 
         stream = self._open_with_retry(
             lambda: sd.InputStream(
-                device=self.mic_device_index,
+                device=index,
                 samplerate=rate,
                 channels=channels,
                 dtype="float32",
@@ -190,6 +244,40 @@ class AudioRecorder(StoppableThread):
         )
         with stream:
             self._capture_windows([buf], [stream])
+
+    def _resolve_mic_sounddevice(self) -> tuple[int | None, int]:
+        """Resolve (sounddevice index, sample rate) for the mic-only path.
+
+        Honours an explicit mic_device_index (tests), then the configured
+        mic_device_name, then the default WASAPI input — falling back to
+        PortAudio's own default at self.mic_rate only if nothing resolves.
+        Uses the device's native sample rate; the callback resamples to 16kHz.
+        """
+        if self.mic_device_index is not None:
+            return self.mic_device_index, self.mic_rate
+
+        from hearsay.audio import devices
+
+        dev = devices.resolve_input_device(self.mic_device_name)
+        if dev is None and self.mic_device_name:
+            log.warning(
+                "Configured microphone %r not found; using default input",
+                self.mic_device_name,
+            )
+        if dev is None:
+            dev = devices.get_default_input_device()
+        if dev is None:
+            log.warning(
+                "No input device resolved; using PortAudio default at %dHz",
+                self.mic_rate,
+            )
+            return None, self.mic_rate
+
+        index = dev.index if (dev.index is not None and dev.index >= 0) else None
+        log.info(
+            "Microphone: %s (sd index=%s, rate=%d)", dev.name, index, dev.sample_rate
+        )
+        return index, dev.sample_rate
 
     def _record_both(self) -> None:
         """Record system audio and microphone as separate tagged streams.
@@ -245,9 +333,16 @@ class AudioRecorder(StoppableThread):
     def _resolve_loopback_device(self) -> None:
         if self.loopback_device_index is not None:
             return
-        from hearsay.audio.devices import get_default_loopback
+        from hearsay.audio import devices
 
-        dev = get_default_loopback()
+        dev = devices.resolve_loopback(self.loopback_device_name)
+        if dev is None and self.loopback_device_name:
+            log.warning(
+                "Configured system-audio device %r not found; using default",
+                self.loopback_device_name,
+            )
+        if dev is None:
+            dev = devices.get_default_loopback()
         if dev is None:
             raise RuntimeError("No loopback device found")
         self.loopback_device_index = dev.index
@@ -284,7 +379,16 @@ class AudioRecorder(StoppableThread):
         import pyaudiowpatch as pyaudio
 
         wasapi_info = p.get_host_api_info_by_type(pyaudio.paWASAPI)
-        mic_dev_index = wasapi_info.get("defaultInputDevice", -1)
+        mic_dev_index = -1
+        if self.mic_device_name:
+            mic_dev_index = self._find_pyaudio_wasapi_input(p, self.mic_device_name)
+            if mic_dev_index < 0:
+                log.warning(
+                    "Configured microphone %r not found for 'Both' mode; using default",
+                    self.mic_device_name,
+                )
+        if mic_dev_index < 0:
+            mic_dev_index = wasapi_info.get("defaultInputDevice", -1)
         if mic_dev_index < 0:
             raise RuntimeError("No default WASAPI input device")
 
@@ -335,6 +439,34 @@ class AudioRecorder(StoppableThread):
         ) from last_exc
 
     @staticmethod
+    def _find_pyaudio_wasapi_input(p: Any, name: str) -> int:
+        """Return a PyAudioWPatch WASAPI input device index matching *name*, or -1."""
+        import pyaudiowpatch as pyaudio
+
+        try:
+            api_index = p.get_host_api_info_by_type(pyaudio.paWASAPI)["index"]
+        except Exception:
+            api_index = None
+        candidates: list[tuple[int, str]] = []
+        for i in range(p.get_device_count()):
+            dev = p.get_device_info_by_index(i)
+            if dev.get("maxInputChannels", 0) <= 0 or dev.get("isLoopbackDevice"):
+                continue
+            if api_index is not None and dev.get("hostApi") != api_index:
+                continue
+            candidates.append((i, dev["name"]))
+        for i, nm in candidates:  # exact, then prefix, then substring
+            if nm == name:
+                return i
+        for i, nm in candidates:
+            if nm.startswith(name) or name.startswith(nm):
+                return i
+        for i, nm in candidates:
+            if name in nm or nm in name:
+                return i
+        return -1
+
+    @staticmethod
     def _close_stream(stream: Any) -> None:
         try:
             stream.stop_stream()
@@ -359,9 +491,12 @@ class AudioRecorder(StoppableThread):
         window_open = 0.0  # elapsed seconds when the current window began
         chunk_index = 0
         dead_warned: set[int] = set()
+        silence = _SilenceMonitor(SILENCE_ALERT_S, SILENCE_REALERT_S)
+        silence.start(session_start)
 
         while not self.stopped():
             self.wait(timeout=0.5)
+            now = time.monotonic()
 
             for i, stream in enumerate(streams):
                 if i not in dead_warned and not self._stream_active(stream):
@@ -371,10 +506,25 @@ class AudioRecorder(StoppableThread):
             if streams and len(dead_warned) == len(streams) and not self.stopped():
                 raise RuntimeError("All capture streams stopped unexpectedly")
 
-            elapsed = time.monotonic() - session_start
+            # Silent-capture watchdog: a stream can stay "active" while the
+            # device delivers no audio (muted, unplugged, blocked, or wedged).
+            # Alert loudly but keep recording so the session recovers if the
+            # device returns.
+            if self.on_no_audio and not self.stopped() and silence.should_alert(now):
+                log.warning(
+                    "No audio captured for %.0fs (source=%s) — alerting user",
+                    now - silence.last_audio, self.source,
+                )
+                try:
+                    self.on_no_audio()
+                except Exception:
+                    log.error("on_no_audio callback failed", exc_info=True)
+
+            elapsed = now - session_start
             if elapsed - window_open < CHUNK_DURATION_S:
                 continue
-            self._emit_window(buffers, chunk_index, window_open)
+            if self._emit_window(buffers, chunk_index, window_open):
+                silence.note_audio(now)
             chunk_index += 1
             window_open = elapsed
 
@@ -386,7 +536,8 @@ class AudioRecorder(StoppableThread):
         buffers: list[_SourceBuffer],
         chunk_index: int,
         window_start: float,
-    ) -> None:
+    ) -> bool:
+        """Queue one window's non-silent audio. Returns True if any was captured."""
         parts: dict[str, np.ndarray] = {}
         for buf in buffers:
             data = buf.cut()
@@ -398,7 +549,7 @@ class AudioRecorder(StoppableThread):
             parts[buf.source] = data
 
         if not parts:
-            return
+            return False
 
         chunk = AudioChunk(index=chunk_index, window_start=window_start, parts=parts)
         log.debug(
@@ -409,7 +560,7 @@ class AudioRecorder(StoppableThread):
         while True:
             try:
                 self.audio_queue.put(chunk, timeout=0.5)
-                return
+                return True
             except queue.Full:
                 if self.stopped():
                     # One final non-blocking attempt so stop never hangs here.
@@ -417,4 +568,4 @@ class AudioRecorder(StoppableThread):
                         self.audio_queue.put_nowait(chunk)
                     except queue.Full:
                         log.warning("Audio queue full at stop; dropped window %d", chunk_index)
-                    return
+                    return True

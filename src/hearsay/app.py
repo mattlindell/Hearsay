@@ -163,7 +163,10 @@ class HearsayApp:
             self._recorder = AudioRecorder(
                 audio_queue=audio_queue,
                 source=source,
+                mic_device_name=self._config.mic_device_name,
+                loopback_device_name=self._config.loopback_device_name,
                 on_fatal=self._on_recorder_fatal,
+                on_no_audio=self._on_no_audio,
             )
             self._recorder.start()
 
@@ -217,6 +220,29 @@ class HearsayApp:
         if self._live_view:
             self._live_view.set_status("Recording FAILED — session stopped")
         self._stop_recording()
+
+    def _on_no_audio(self) -> None:
+        """Recorder reports a silent capture (called from its thread)."""
+        safe_after(self._root, 0, self._handle_no_audio)
+
+    def _handle_no_audio(self) -> None:
+        """Warn loudly that nothing is being captured, but keep recording.
+
+        Unlike a fatal recorder death, a silent capture (muted, unplugged,
+        blocked, or wedged device) may recover mid-session, so the session is
+        kept alive and the recorder re-alerts periodically while still silent.
+        """
+        if not self._recording:
+            return
+        log.warning("Session is capturing no audio — notifying user (recording continues)")
+        if self._tray:
+            self._tray.notify(
+                "Hearsay is recording but hearing no audio. Check that the right "
+                "microphone or source is selected and not muted, unplugged, or "
+                "blocked. Recording continues and will recover if the device returns."
+            )
+        if self._live_view:
+            self._live_view.set_status("No audio detected — check your microphone/source")
 
     def _stop_recording(self) -> None:
         """Stop the current recording session.
@@ -345,7 +371,10 @@ class HearsayApp:
             if not writer.body_written:
                 log.warning("Session ended with no transcript text")
                 if self._tray:
-                    self._tray.notify("Recording ended — no speech was captured.")
+                    self._tray.notify(
+                        "Recording ended — no speech was captured. The microphone "
+                        "or audio source may have been muted, unplugged, or blocked."
+                    )
 
         # Insert session separator in live view
         end_time = time.strftime("%I:%M %p")

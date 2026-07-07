@@ -18,7 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import numpy as np
 
-from hearsay.audio.recorder import AudioChunk, _SourceBuffer
+from hearsay.audio.devices import AudioDevice, match_device_by_name
+from hearsay.audio.recorder import AudioChunk, _SilenceMonitor, _SourceBuffer
 from hearsay.constants import AUDIO_SOURCE_MIC, AUDIO_SOURCE_SYSTEM
 from hearsay.output.markdown_writer import MarkdownWriter
 from hearsay.transcription.engine import TranscriptionResult
@@ -186,6 +187,39 @@ writer3.post_process()
 content3 = writer3.file_path.read_text(encoding="utf-8")
 check("No speech was captured during this session." in content3, "empty-session note present")
 check(not writer3.body_written, "body_written False for empty session")
+
+print("== Silent-capture watchdog (_SilenceMonitor) ==")
+mon = _SilenceMonitor(alert_s=60, repeat_s=120)
+mon.start(1000.0)
+check(mon.should_alert(1030.0) is False, "no alert before 60s of silence")
+check(mon.should_alert(1060.0) is True, "alert fires at 60s of silence")
+check(mon.should_alert(1090.0) is False, "no re-alert before the repeat interval")
+check(mon.should_alert(1180.0) is True, "re-alert after the 120s repeat interval")
+mon.note_audio(1200.0)
+check(mon.should_alert(1230.0) is False, "audio re-arms the monitor (quiet <60s)")
+check(mon.should_alert(1260.0) is True, "alert fires 60s after audio stops again")
+
+mon2 = _SilenceMonitor(alert_s=60, repeat_s=120)
+mon2.start(0.0)
+alerted = False
+for t in range(0, 600, 10):  # non-silent audio every 10s
+    mon2.note_audio(float(t))
+    if mon2.should_alert(float(t)):
+        alerted = True
+check(not alerted, "healthy capture (audio every 10s) never alerts")
+
+print("== Device name matching (match_device_by_name) ==")
+def _dev(name):
+    return AudioDevice(index=0, name=name, channels=1, sample_rate=48000, is_loopback=False)
+_devs = [_dev("Microphone (HD Pro Webcam C920)"), _dev("Headset (Poly)"), _dev("Stereo Mix")]
+check(match_device_by_name("", _devs) is None, "empty name -> None (fall back to default)")
+check(match_device_by_name("Nonexistent Mic", _devs) is None, "no match -> None")
+check(match_device_by_name("Headset (Poly)", _devs).name == "Headset (Poly)", "exact match")
+check(match_device_by_name("Stereo", _devs).name == "Stereo Mix", "prefix match (stored name shorter)")
+check(
+    match_device_by_name("Microphone (HD Pro Webcam C920) 2- ", _devs) is not None,
+    "tolerant match survives library-to-library name drift",
+)
 
 print()
 if FAILURES:
