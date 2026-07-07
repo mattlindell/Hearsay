@@ -19,7 +19,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import numpy as np
 
 from hearsay.audio.devices import AudioDevice, match_device_by_name
-from hearsay.audio.recorder import AudioChunk, _SilenceMonitor, _SourceBuffer
+from hearsay.audio.recorder import (
+    AudioChunk,
+    AudioRecorder,
+    _OPEN_ATTEMPTS,
+    _SilenceMonitor,
+    _SourceBuffer,
+)
 from hearsay.constants import AUDIO_SOURCE_MIC, AUDIO_SOURCE_SYSTEM
 from hearsay.output.markdown_writer import MarkdownWriter
 from hearsay.transcription.engine import TranscriptionResult
@@ -207,6 +213,73 @@ for t in range(0, 600, 10):  # non-silent audio every 10s
     if mon2.should_alert(float(t)):
         alerted = True
 check(not alerted, "healthy capture (audio every 10s) never alerts")
+
+print("== Mic stream recovery (stale-device self-heal) ==")
+
+
+class _FakeMicStream:
+    def __init__(self, fail_counter):
+        self._fail = fail_counter  # shared [n]; each start() consumes one failure
+        self.started = self.stopped = self.closed = False
+
+    def start(self):
+        if self._fail[0] > 0:
+            self._fail[0] -= 1
+            raise RuntimeError("Error starting stream: Unanticipated host error [PaErrorCode -9999]")
+        self.started = True
+
+    def stop(self):
+        self.stopped = True
+
+    def close(self):
+        self.closed = True
+
+
+class _FakeSD:
+    def __init__(self, fail_starts):
+        self._fail = [fail_starts]
+        self.reinit_count = 0
+        self.streams = []
+
+    def InputStream(self, **kwargs):
+        s = _FakeMicStream(self._fail)
+        self.streams.append(s)
+        return s
+
+    def _terminate(self):
+        pass
+
+    def _initialize(self):
+        self.reinit_count += 1
+
+
+def _make_recorder():
+    # mic_device_index set => _resolve_mic_sounddevice returns instantly (no hardware)
+    r = AudioRecorder(audio_queue=queue.Queue(), source=AUDIO_SOURCE_MIC,
+                      mic_device_index=7, mic_rate=48000)
+    r.wait = lambda timeout=None: False  # don't actually sleep between retries
+    return r
+
+
+_noop_cb = lambda rate: (lambda *a: None)
+
+rec = _make_recorder()
+sd2 = _FakeSD(fail_starts=2)  # first two starts fail with -9999, third succeeds
+stream = rec._open_started_mic_stream(sd2, _noop_cb, 1)
+check(stream is not None and stream.started, "mic stream recovers after 2 failed starts")
+check(sd2.reinit_count == 2, f"audio backend re-initialized between retries ({sd2.reinit_count})")
+check(len(sd2.streams) == 3, f"open+start retried 3 times ({len(sd2.streams)})")
+check(sd2.streams[0].closed and sd2.streams[1].closed, "failed streams closed, not leaked")
+
+rec2 = _make_recorder()
+sd3 = _FakeSD(fail_starts=999)  # never recovers
+raised = False
+try:
+    rec2._open_started_mic_stream(sd3, _noop_cb, 1)
+except RuntimeError:
+    raised = True
+check(raised, "gives up with RuntimeError after all attempts exhausted")
+check(len(sd3.streams) == _OPEN_ATTEMPTS, f"tried exactly _OPEN_ATTEMPTS ({len(sd3.streams)})")
 
 print("== Device name matching (match_device_by_name) ==")
 def _dev(name):

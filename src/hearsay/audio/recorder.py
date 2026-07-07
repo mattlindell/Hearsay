@@ -222,28 +222,88 @@ class AudioRecorder(StoppableThread):
         """Record microphone via sounddevice (callback mode, WASAPI)."""
         import sounddevice as sd
 
-        index, rate = self._resolve_mic_sounddevice()
         channels = 1  # capture mono; PortAudio/WASAPI downmixes multi-channel mics
         buf = _SourceBuffer(AUDIO_SOURCE_MIC)
 
-        def callback(indata: np.ndarray, frames: int, time_info: object, status: object) -> None:
-            try:
-                buf.append(resample(indata.copy(), rate, channels))
-            except Exception:
-                log.error("Error in mic callback", exc_info=True)
+        def make_callback(rate: int) -> Callable:
+            def callback(indata: np.ndarray, frames: int, time_info: object, status: object) -> None:
+                try:
+                    buf.append(resample(indata.copy(), rate, channels))
+                except Exception:
+                    log.error("Error in mic callback", exc_info=True)
+            return callback
 
-        stream = self._open_with_retry(
-            lambda: sd.InputStream(
-                device=index,
-                samplerate=rate,
-                channels=channels,
-                dtype="float32",
-                callback=callback,
-            ),
-            what="microphone stream",
-        )
-        with stream:
+        stream = self._open_started_mic_stream(sd, make_callback, channels)
+        try:
             self._capture_windows([buf], [stream])
+        finally:
+            self._close_sd_stream(stream)
+
+    def _open_started_mic_stream(
+        self, sd: Any, make_callback: Callable[[int], Callable], channels: int
+    ) -> Any:
+        """Open *and start* the mic stream, recovering from a stale audio backend.
+
+        The device list PortAudio caches when the process starts can go stale if
+        a device changes state mid-run — a USB webcam that sleeps or is re-seated,
+        or the app having started while the device was briefly unavailable. That
+        surfaces as a PaErrorCode -9999 "Unanticipated host error" when the stream
+        *starts* (not when it opens), and it persists until PortAudio
+        re-enumerates. So on each failed attempt we terminate + re-initialize
+        sounddevice's PortAudio, re-resolve the device (its index may change), and
+        retry — letting the app self-heal instead of needing a manual restart.
+        """
+        last_exc: Exception | None = None
+        for attempt in range(1, _OPEN_ATTEMPTS + 1):
+            stream = None
+            try:
+                index, rate = self._resolve_mic_sounddevice()
+                stream = sd.InputStream(
+                    device=index,
+                    samplerate=rate,
+                    channels=channels,
+                    dtype="float32",
+                    callback=make_callback(rate),
+                )
+                stream.start()  # a stale device handle raises -9999 here, not on open
+                return stream
+            except Exception as exc:
+                last_exc = exc
+                log.warning(
+                    "Opening microphone stream failed (attempt %d/%d): %s",
+                    attempt, _OPEN_ATTEMPTS, exc,
+                )
+                if stream is not None:
+                    self._close_sd_stream(stream)
+                if attempt < _OPEN_ATTEMPTS:
+                    self._reinitialize_sounddevice(sd)
+                    if self.wait(timeout=_OPEN_RETRY_DELAY_S):
+                        break  # stop requested while retrying
+        raise RuntimeError(
+            f"Could not open microphone stream after {_OPEN_ATTEMPTS} attempts"
+        ) from last_exc
+
+    @staticmethod
+    def _reinitialize_sounddevice(sd: Any) -> None:
+        """Terminate + re-init sounddevice's PortAudio to refresh the device list."""
+        try:
+            sd._terminate()
+            sd._initialize()
+            log.info("Re-initialized audio backend to refresh the device list")
+        except Exception:
+            log.warning("Could not re-initialize audio backend", exc_info=True)
+
+    @staticmethod
+    def _close_sd_stream(stream: Any) -> None:
+        """Stop and close a sounddevice stream (its API differs from PyAudio's)."""
+        try:
+            stream.stop()
+        except Exception:
+            log.debug("sounddevice stream stop failed", exc_info=True)
+        try:
+            stream.close()
+        except Exception:
+            log.debug("sounddevice stream close failed", exc_info=True)
 
     def _resolve_mic_sounddevice(self) -> tuple[int | None, int]:
         """Resolve (sounddevice index, sample rate) for the mic-only path.
