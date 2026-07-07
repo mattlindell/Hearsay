@@ -7,6 +7,7 @@ import webbrowser
 import customtkinter as ctk
 
 from hearsay.constants import APP_NAME, APP_VERSION
+from hearsay.ui.window_icon import apply_window_icon
 
 GITHUB_URL = "https://github.com/parkscloud/Hearsay"
 
@@ -27,6 +28,7 @@ class AboutWindow(ctk.CTkToplevel):
         self.title(f"About {APP_NAME}")
         self.geometry("450x400")
         self.resizable(False, False)
+        apply_window_icon(self)
 
         # App name + version
         ctk.CTkLabel(

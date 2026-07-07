@@ -1,7 +1,7 @@
 """Application constants and model configuration."""
 
 APP_NAME = "Hearsay"
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2"
 APP_AUTHOR = "Hearsay"
 
 # Audio settings

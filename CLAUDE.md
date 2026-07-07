@@ -15,6 +15,8 @@ The version lives in **three** files that must stay in sync: `src/hearsay/__init
 
 `gh release create` makes the version tag on GitHub only — run `git fetch --tags` before relying on local tags (they are usually behind).
 
+The installer pins a permanent `AppId` GUID in `installer.iss` — **never change or regenerate it**, or Windows stops recognizing installed copies as the same app across upgrades. Introduced in v1.1.2; installs from v1.1.1 and earlier (no explicit `AppId`, so a hash-derived identity) don't upgrade across that boundary and must be uninstalled from Add/Remove Programs first — a one-time step that release notes should call out.
+
 Run from source: `python -m hearsay` with `src` on `PYTHONPATH`.
 
 ## Conventions

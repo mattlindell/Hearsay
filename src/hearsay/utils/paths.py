@@ -1,9 +1,22 @@
 """Manage %APPDATA%\\Hearsay directory structure."""
 
 import os
+import sys
 from pathlib import Path
 
 from hearsay.constants import APP_NAME
+
+
+def get_asset_path(name: str) -> Path:
+    """Return the path to a bundled asset (e.g. ``icon.ico``).
+
+    Resolves both from source (``src/assets/``) and from the PyInstaller
+    bundle, where ``Hearsay.spec`` copies ``src/assets`` to ``assets/`` under
+    ``sys._MEIPASS``.
+    """
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS) / "assets" / name
+    return Path(__file__).resolve().parents[2] / "assets" / name
 
 
 def get_appdata_dir() -> Path:

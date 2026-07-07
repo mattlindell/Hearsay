@@ -16,6 +16,7 @@ from hearsay.constants import (
     AUDIO_SOURCE_SYSTEM,
     MODEL_TABLE,
 )
+from hearsay.ui.window_icon import apply_window_icon
 
 log = logging.getLogger(__name__)
 
@@ -64,6 +65,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self.title(f"{APP_NAME} Settings")
         self.geometry("550x520")
         self.resizable(False, False)
+        apply_window_icon(self)
 
         self._config_manager = config_manager
         self._config = config_manager.config

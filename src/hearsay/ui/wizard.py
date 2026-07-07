@@ -20,6 +20,7 @@ from hearsay.constants import (
 )
 from hearsay.transcription.gpu_detect import GPUInfo, detect_gpu
 from hearsay.transcription.model_manager import download_model
+from hearsay.ui.window_icon import apply_window_icon
 from hearsay.utils.paths import get_default_output_dir
 
 log = logging.getLogger(__name__)
@@ -46,6 +47,7 @@ class SetupWizard(ctk.CTkToplevel):
         self.title(f"{APP_NAME} Setup")
         self.geometry("600x560")
         self.resizable(False, False)
+        apply_window_icon(self)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self._config_manager = config_manager

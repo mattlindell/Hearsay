@@ -8,6 +8,7 @@ import tkinter as tk
 import customtkinter as ctk
 
 from hearsay.constants import APP_NAME
+from hearsay.ui.window_icon import apply_window_icon
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ class LiveTranscriptWindow(ctk.CTkToplevel):
         self.title(f"{APP_NAME} - Live Transcript")
         self.geometry("700x500")
         self.minsize(400, 300)
+        apply_window_icon(self)
 
         # Hide on close rather than destroy
         self.protocol("WM_DELETE_WINDOW", self.hide)

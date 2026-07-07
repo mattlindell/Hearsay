@@ -1,5 +1,10 @@
 # Hearsay
 
+[![Release](https://img.shields.io/github/v/release/parkscloud/Hearsay?label=release&color=1a73e8)](https://github.com/parkscloud/Hearsay/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/parkscloud/Hearsay/total?color=1a73e8)](https://github.com/parkscloud/Hearsay/releases)
+[![License: MIT](https://img.shields.io/github/license/parkscloud/Hearsay?color=green)](LICENSE)
+[![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6)](https://github.com/parkscloud/Hearsay/releases/latest)
+
 **Windows desktop app that records system audio and/or microphone input and transcribes it in real-time using OpenAI's open-source Whisper model running locally.**
 
 No API calls, no cloud services -- everything runs on your machine.

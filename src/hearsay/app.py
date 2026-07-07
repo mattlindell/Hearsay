@@ -24,6 +24,7 @@ from hearsay.ui.settings_window import SettingsWindow
 from hearsay.ui.theme import apply_theme
 from hearsay.ui.tray import SystemTrayIcon
 from hearsay.ui.wizard import SetupWizard
+from hearsay.ui.window_icon import apply_window_icon
 from hearsay.utils.threading_utils import safe_after
 
 log = logging.getLogger(__name__)
@@ -60,6 +61,7 @@ class HearsayApp:
         self._root = ctk.CTk()
         self._root.withdraw()  # Hidden root window
         self._root.title(APP_NAME)
+        apply_window_icon(self._root)
 
         self._live_view: LiveTranscriptWindow | None = None
 
