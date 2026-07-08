@@ -10,7 +10,6 @@ from pathlib import Path
 from hearsay.constants import PARAGRAPH_GAP_S, SOURCE_LABELS
 from hearsay.output.formatter import (
     clean_transcript_text,
-    format_timestamp,
     make_title,
 )
 from hearsay.transcription.engine import TranscriptionResult
@@ -21,11 +20,11 @@ log = logging.getLogger(__name__)
 _FOOTER_MARKER = "\n---\n"
 
 # Speaker-source label inserted whenever the audio source changes,
-# e.g. "**Remote [12:34]:** ". post_process() must leave these intact.
+# e.g. "**Remote:** ". post_process() must leave these intact.
 _LABEL_RE = re.compile(
     r"(\*\*(?:"
     + "|".join(re.escape(label) for label in SOURCE_LABELS.values())
-    + r") \[[^\]]*\]:\*\* )"
+    + r"):\*\* )"
 )
 
 
@@ -89,7 +88,7 @@ class MarkdownWriter:
                 first = not self._body_written and not pieces
                 pieces.append(
                     ("" if first else "\n\n")
-                    + f"**{label} [{format_timestamp(seg_start)}]:** "
+                    + f"**{label}:** "
                 )
                 self._last_source = source
             elif self._last_segment_end is not None:

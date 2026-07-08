@@ -15,11 +15,11 @@ No API calls, no cloud services -- everything runs on your machine.
 
 - **System audio capture** -- record what your speakers play (YouTube, Teams, podcasts, etc.) via WASAPI loopback
 - **Microphone capture** -- record from your mic, or capture both sources together
-- **Speaker-source labels** -- transcripts mark every switch between **Remote** (system audio) and **Local** (microphone) speech with a timestamped label, so conversations read like a dialogue
+- **Speaker-source labels** -- transcripts mark every switch between **Remote** (system audio) and **Local** (microphone) speech with a bold label, so conversations read like a dialogue
 - **Real-time transcription** -- text appears in a live view window as you record
 - **Local AI** -- uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2), no internet required after model download
 - **GPU + CPU** -- auto-detects NVIDIA GPU; works on CPU with INT8 quantization
-- **Markdown output** -- timestamped `.md` transcripts saved to your chosen directory
+- **Markdown output** -- date-stamped `.md` transcripts saved to your chosen directory
 - **System tray app** -- runs quietly in the tray, right-click to start/stop recording
 - **First-run wizard** -- detects hardware, downloads the right model, configures everything
 - **Windows installer** -- appears in Add/Remove Programs, Start Menu shortcut, clean uninstall

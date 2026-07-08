@@ -10,6 +10,7 @@ source-label placement (switches, single-source, gap paragraphs),
 post-process label preservation, and empty-session output.
 """
 import queue
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -156,11 +157,12 @@ content = writer.file_path.read_text(encoding="utf-8")
 print("---- transcript ----")
 print(content)
 print("--------------------")
-check(content.count("**Remote [") == 3, f"3 Remote labels ({content.count('**Remote [')})")
-check(content.count("**Local [") == 3, f"3 Local labels ({content.count('**Local [')})")
-check("**Remote [0:00]:** Hello" in content, "first label at top with timestamp")
-check("**Local [0:35]:**" in content, "local label timestamped from window offset (30+5.0)")
-check("**Remote [1:31]:**" in content, "remote return label at 90+1.0")
+check(content.count("**Remote:**") == 3, f"3 Remote labels ({content.count('**Remote:**')})")
+check(content.count("**Local:**") == 3, f"3 Local labels ({content.count('**Local:**')})")
+check("**Remote:** Hello" in content, "first label at top")
+check(re.findall(r"\*\*(Remote|Local):\*\*", content) == ["Remote", "Local"] * 3,
+      "labels alternate on every source switch")
+check("]:**" not in content, "no [m:ss] timestamps in labels")
 check("\n\nNow some more local talk" in content,
       "same-source long gap gets paragraph break without new label")
 check(" um " not in content, "post-process still strips fillers")
@@ -183,8 +185,8 @@ for r in results2:
 writer2.finalize(total_duration=61)
 writer2.post_process()
 content2 = writer2.file_path.read_text(encoding="utf-8")
-check(content2.count("**Remote [") == 1, f"exactly one label ({content2.count('**Remote [')})")
-check(content2.count("**Local [") == 0, "no Local label")
+check(content2.count("**Remote:**") == 1, f"exactly one label ({content2.count('**Remote:**')})")
+check(content2.count("**Local:**") == 0, "no Local label")
 
 print("== Writer: empty session ==")
 writer3 = MarkdownWriter(OUT, title="Test Empty")
