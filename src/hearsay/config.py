@@ -11,6 +11,10 @@ from hearsay.constants import (
     AUDIO_SOURCE_SYSTEM,
     DEFAULT_CPU_COMPUTE,
     DEFAULT_CPU_MODEL,
+    DEFAULT_SUMMARIZE_MAX_TOKENS,
+    DEFAULT_SUMMARIZE_PROMPT,
+    DEFAULT_SUMMARIZE_TEMPERATURE,
+    DEFAULT_SUMMARIZE_TIMEOUT_S,
 )
 from hearsay.utils.paths import get_config_path, get_default_output_dir
 
@@ -38,6 +42,16 @@ class AppConfig:
 
     # Output
     output_dir: str = field(default_factory=lambda: str(get_default_output_dir()))
+
+    # LLM summarization (OpenAI-compatible endpoint, e.g. a local qwen server)
+    summarize_enabled: bool = False
+    summarize_base_url: str = ""  # e.g. http://192.168.1.50:8000/v1
+    summarize_api_key: str = ""  # often unused for local servers
+    summarize_model: str = ""  # e.g. qwen2.5-instruct
+    summarize_prompt: str = DEFAULT_SUMMARIZE_PROMPT
+    summarize_temperature: float = DEFAULT_SUMMARIZE_TEMPERATURE
+    summarize_max_tokens: int = DEFAULT_SUMMARIZE_MAX_TOKENS
+    summarize_timeout_s: int = DEFAULT_SUMMARIZE_TIMEOUT_S
 
     # UI
     show_live_view_on_start: bool = False

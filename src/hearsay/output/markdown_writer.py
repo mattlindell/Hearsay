@@ -137,6 +137,54 @@ class MarkdownWriter:
         log.info("Transcript finalized: %s", self.file_path)
         return self.file_path
 
+    def read_transcript_body(self) -> str:
+        """Return the transcript body text (between the title and the footer).
+
+        Used to feed the transcript to summarization. Returns an empty string
+        if the file doesn't exist.
+        """
+        if not self.file_path.exists():
+            return ""
+        content = self.file_path.read_text(encoding="utf-8")
+
+        try:
+            header_end = content.index("\n\n") + 2
+        except ValueError:
+            header_end = 0
+        footer_idx = content.rfind(_FOOTER_MARKER)
+        if footer_idx == -1:
+            footer_idx = len(content)
+        return content[header_end:footer_idx].strip()
+
+    def prepend_summary(self, summary: str) -> None:
+        """Insert an LLM-generated summary block directly after the title.
+
+        Lays the file out as: title, the summary, then a ``## Transcript``
+        heading above the existing body. Safe to call after finalize()/
+        post_process(); does nothing if the file is missing or summary empty.
+        """
+        summary = summary.strip()
+        if not summary or not self.file_path.exists():
+            return
+
+        content = self.file_path.read_text(encoding="utf-8")
+        try:
+            header_end = content.index("\n\n") + 2
+        except ValueError:
+            # No blank line after the title; treat everything as body.
+            header_end = len(content)
+
+        header = content[:header_end]
+        body = content[header_end:]
+
+        block = f"{summary}\n\n## Transcript\n\n"
+        # Write to a temp file and atomically replace, so a failure mid-write
+        # can't truncate or lose the transcript that was already saved.
+        tmp_path = self.file_path.with_name(self.file_path.name + ".tmp")
+        tmp_path.write_text(header + block + body, encoding="utf-8")
+        tmp_path.replace(self.file_path)
+        log.info("Summary prepended to %s", self.file_path)
+
     def post_process(self) -> None:
         """Read the finalized transcript, clean up the body, and rewrite."""
         if not self.file_path.exists():

@@ -1,8 +1,13 @@
 @echo off
 REM Build Hearsay with PyInstaller (onedir mode)
 REM Run from the project root: build.bat
-REM The bundle is defined by Hearsay.spec -- edit that file to change
-REM bundled data, hidden imports, the icon, etc.
+REM
+REM This produces a CPU-capable build. The app detects an NVIDIA GPU at runtime
+REM via nvidia-smi + CTranslate2 (no PyTorch). For a GPU-accelerated EXE, first
+REM   pip install -r requirements-gpu.txt
+REM then add the CUDA libraries to the bundle by appending these flags below:
+REM   --collect-all "nvidia" ^
+REM (the nvidia-cublas-cu12 / nvidia-cudnn-cu12 wheels must be installed first).
 
 echo Building Hearsay...
 

@@ -1,0 +1,13 @@
+# NVIDIA GPU acceleration for Whisper transcription.
+#
+# CTranslate2 (the engine faster-whisper runs on) needs CUDA 12 cuBLAS and
+# cuDNN 9 at runtime. These wheels supply them with no system CUDA toolkit
+# install required. PyTorch is NOT needed -- GPU detection probes CTranslate2
+# and nvidia-smi directly.
+#
+# Install on top of the base requirements:
+#   pip install -r requirements.txt -r requirements-gpu.txt
+#
+# Requires an NVIDIA GPU with a recent driver (nvidia-smi must work).
+nvidia-cublas-cu12
+nvidia-cudnn-cu12>=9.0
