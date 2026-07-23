@@ -1,5 +1,10 @@
 # Hearsay
 
+[![Release](https://img.shields.io/github/v/release/parkscloud/Hearsay?label=release&color=1a73e8)](https://github.com/parkscloud/Hearsay/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/parkscloud/Hearsay/total?color=1a73e8)](https://github.com/parkscloud/Hearsay/releases)
+[![License: MIT](https://img.shields.io/github/license/parkscloud/Hearsay?color=green)](LICENSE)
+[![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6)](https://github.com/parkscloud/Hearsay/releases/latest)
+
 **Windows desktop app that records system audio and/or microphone input and transcribes it in real-time using OpenAI's open-source Whisper model running locally.**
 
 No API calls, no cloud services -- everything runs on your machine.
@@ -9,7 +14,8 @@ No API calls, no cloud services -- everything runs on your machine.
 ## Features
 
 - **System audio capture** -- record what your speakers play (YouTube, Teams, podcasts, etc.) via WASAPI loopback
-- **Microphone capture** -- record from your mic, or mix both sources together
+- **Microphone capture** -- record from your mic, or capture both sources together
+- **Speaker-source labels** -- transcripts mark every switch between **Remote** (system audio) and **Local** (microphone) speech with a bold label, so conversations read like a dialogue
 - **Real-time transcription** -- text appears in a live view window as you record
 - **Local AI** -- uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2), no internet required after model download
 - **GPU + CPU** -- auto-detects NVIDIA GPU (via CTranslate2 + `nvidia-smi`, no PyTorch); works on CPU with INT8 quantization
@@ -26,7 +32,7 @@ No API calls, no cloud services -- everything runs on your machine.
 ```bash
 # Clone the repo
 git clone https://github.com/parkscloud/Hearsay.git
-cd hearsay
+cd Hearsay
 
 # Install the package (CPU works out of the box). The editable install puts
 # the `hearsay` package on your path so `python -m hearsay` works anywhere.
@@ -134,7 +140,6 @@ src/hearsay/
 ├── audio/
 │   ├── devices.py           # Enumerate loopback + mic devices
 │   ├── recorder.py          # AudioRecorder thread
-│   ├── mixer.py             # Mix two audio streams
 │   └── resampler.py         # Resample to 16kHz mono float32
 ├── transcription/
 │   ├── gpu_detect.py        # Detect CUDA via CTranslate2 + nvidia-smi (no torch)
@@ -152,6 +157,7 @@ src/hearsay/
 │   ├── live_view.py         # Live transcript window
 │   ├── about_window.py      # About dialog
 │   ├── settings_window.py   # Settings editor
+│   ├── window_icon.py       # Title-bar icon helper (Hearsay logo)
 │   ├── icons.py             # Programmatic icon generation
 │   └── theme.py             # customtkinter theme
 └── utils/
@@ -164,7 +170,7 @@ src/hearsay/
 
 ### Prerequisites
 
-1. **Python 3.11+**
+1. **Python 3.11+ (64-bit)** -- the installer packages x64-only builds
 2. **Project dependencies:** `pip install -r requirements.txt`
 3. **PyInstaller:** `pip install pyinstaller`
 4. **Inno Setup 6+:** `winget install JRSoftware.InnoSetup`
@@ -175,11 +181,13 @@ src/hearsay/
 # 1. Bundle the app with PyInstaller (output in dist\Hearsay\)
 build.bat
 
-# 2. Compile the Windows installer
-iscc installer.iss
+# 2. Compile the Windows installer (winget does not add ISCC to PATH)
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
 ```
 
 The installer is written to `installer_output\HearsaySetup.exe`.
+
+The PyInstaller bundle is defined by `Hearsay.spec`; `build.bat` is a thin wrapper around it. Edit the spec to change bundled data, hidden imports, or the icon.
 
 ### Releasing
 

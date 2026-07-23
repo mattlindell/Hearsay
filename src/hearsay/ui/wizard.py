@@ -9,12 +9,7 @@ from tkinter import filedialog
 
 import customtkinter as ctk
 
-from hearsay.audio.devices import (
-    get_default_loopback,
-    get_default_microphone,
-    list_loopback_devices,
-    list_microphone_devices,
-)
+from hearsay.audio.devices import list_input_devices, list_loopback_devices
 from hearsay.config import AppConfig, ConfigManager
 from hearsay.constants import (
     APP_NAME,
@@ -25,6 +20,7 @@ from hearsay.constants import (
 )
 from hearsay.transcription.gpu_detect import GPUInfo, detect_gpu
 from hearsay.transcription.model_manager import download_model
+from hearsay.ui.window_icon import apply_window_icon
 from hearsay.utils.paths import get_default_output_dir
 
 log = logging.getLogger(__name__)
@@ -49,8 +45,9 @@ class SetupWizard(ctk.CTkToplevel):
     ) -> None:
         super().__init__(master)
         self.title(f"{APP_NAME} Setup")
-        self.geometry("600x480")
+        self.geometry("600x560")
         self.resizable(False, False)
+        apply_window_icon(self)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self._config_manager = config_manager
@@ -207,6 +204,41 @@ class SetupWizard(ctk.CTkToplevel):
                 font=("Segoe UI", 11),
                 text_color="gray",
             ).pack(anchor="w", padx=35, pady=(0, 5))
+
+        # Optional explicit device selection (blank = system default).
+        self._add_device_picker("Microphone", list_input_devices, "mic_device_name")
+        self._add_device_picker(
+            "System audio device", list_loopback_devices, "loopback_device_name"
+        )
+
+    _AUTO_DEVICE = "Automatic (system default)"
+
+    def _add_device_picker(self, title: str, list_fn, config_attr: str) -> None:
+        """Add a device dropdown that writes the chosen name to config on change.
+
+        Writes immediately (not on Finish) because navigating screens clears
+        the container and destroys the widget/variable.
+        """
+        ctk.CTkLabel(
+            self._container, text=title, font=("Segoe UI", 12, "bold"),
+        ).pack(anchor="w", padx=10, pady=(8, 0))
+        try:
+            names = [d.name for d in list_fn()]
+        except Exception:
+            log.warning("Device enumeration failed", exc_info=True)
+            names = []
+        choices = [self._AUTO_DEVICE] + names
+        mapping = {self._AUTO_DEVICE: ""}
+        mapping.update({n: n for n in names})
+        current = getattr(self._config, config_attr, "") or ""
+        initial = current if current in names else self._AUTO_DEVICE
+        var = ctk.StringVar(value=initial)
+        ctk.CTkOptionMenu(
+            self._container, variable=var, values=choices, width=360,
+            command=lambda choice: setattr(
+                self._config, config_attr, mapping.get(choice, "")
+            ),
+        ).pack(anchor="w", padx=10, pady=(0, 4))
 
     # ── Screen 3: Output Directory ──
 

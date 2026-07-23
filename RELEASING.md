@@ -4,14 +4,24 @@ Steps to create a new GitHub release with the installer attached.
 
 ## Prerequisites
 
-- `build.bat` dependencies (Python 3.11+, PyInstaller)
+- `build.bat` dependencies (64-bit Python 3.11+, PyInstaller)
 - Inno Setup 6+ (`winget install JRSoftware.InnoSetup`)
-- GitHub CLI (`winget install GitHub.cli`)
+- GitHub CLI (`winget install GitHub.cli`), authenticated once with `gh auth login`
+
+## Bump the version
+
+Update the version number in all three files (keep them in sync):
+
+- `src/hearsay/__init__.py` — `__version__`
+- `src/hearsay/constants.py` — `APP_VERSION`
+- `installer.iss` — `AppVersion`
+
+> Do **not** change `AppId` in `installer.iss`. It is the app's permanent identity in Windows (Add/Remove Programs and upgrade matching) and must stay fixed — changing it makes Windows treat a new build as a separate product, so upgrades stop recognizing existing installs.
 
 ## Build the installer
 
 ```bash
-# 1. Bundle the app with PyInstaller
+# 1. Bundle the app with PyInstaller (build.bat wraps `pyinstaller Hearsay.spec`)
 build.bat
 
 # 2. Compile the Windows installer
@@ -20,38 +30,22 @@ build.bat
 
 Output: `installer_output\HearsaySetup.exe`
 
-## Create the release
+## Commit, push, then create the release
+
+Commit the version bump (stage explicitly — avoid `git add -A`), push `master`, then create the release from the pushed commit with the installer attached:
 
 ```bash
-# Tag and create the release with the installer attached
-gh release create v1.0.3 installer_output/HearsaySetup.exe --title "Hearsay v1.0.3" --notes "$(cat <<'EOF'
-### New features
+git add src/hearsay/__init__.py src/hearsay/constants.py installer.iss   # + any code/doc changes
+git commit -m "…summary… (vX.Y.Z)"
+git push origin master
 
-- **About window** — new "About" menu item in the system tray shows version, author, GitHub link, open-source acknowledgements, and license (closes #3)
-- **Transcript delay disclaimer** — the Live Transcript window now shows a note explaining the ~30–60 second delay between speech and text appearing (closes #1)
-- **Session separators** — a "Recording ended at ..." divider is inserted between sessions in the Live Transcript so they no longer blend together (closes #2)
+gh release create vX.Y.Z installer_output/HearsaySetup.exe \
+  --target master --title "Hearsay vX.Y.Z" --notes-file notes.md
 
-### Bug fixes
-
-- **Fix race condition between recording stop and start** — rapidly stopping and starting a new recording no longer causes empty transcripts or "didn't seem to start" failures. The new recording now waits for the previous teardown to fully complete before opening audio devices or loading a model.
-- **Fix microphone not picked up in "Both" mode** — the audio mixer now RMS-normalises each stream independently before mixing, so a quiet microphone is no longer drowned out by louder system audio.
-- **Clean shutdown after stop** — quitting the app immediately after stopping a recording now waits for the teardown to finish instead of exiting prematurely.
-- **Clean uninstall** — the installer now terminates any running Hearsay process before removing files, so uninstall no longer fails with locked-file errors (closes #4)
-EOF
-)"
+git fetch --tags   # local tags lag behind GitHub until you fetch
 ```
 
-For subsequent releases, bump the version tag and update the notes:
-
-```bash
-gh release create vX.Y.Z installer_output/HearsaySetup.exe --title "Hearsay vX.Y.Z" --notes "Description of changes."
-```
-
-To generate notes from commits since the last release:
-
-```bash
-gh release create vX.Y.Z installer_output/HearsaySetup.exe --title "Hearsay vX.Y.Z" --generate-notes
-```
+Write the release notes in a file and pass `--notes-file` rather than inlining them — it sidesteps shell-quoting pitfalls (especially in PowerShell, the project's default shell). To auto-generate notes from commits instead, swap in `--generate-notes`.
 
 ## Verify
 
@@ -63,5 +57,5 @@ After creating the release, confirm:
 
 ## Notes
 
-- The version in `installer.iss` (`AppVersion=`) should match the release tag
-- This file is tracked in the repo for portability
+- The version in `installer.iss` (`AppVersion=`) should match the release tag.
+- This file is tracked in the repo for portability.

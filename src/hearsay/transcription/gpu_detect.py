@@ -137,6 +137,7 @@ def detect_gpu() -> GPUInfo:
             recommended_device="cuda",
         )
 
+    log.info("No CUDA GPU detected; recommending CPU")
     return GPUInfo(
         cuda_available=False,
         gpu_name="",
@@ -144,4 +145,40 @@ def detect_gpu() -> GPUInfo:
         recommended_model=DEFAULT_CPU_MODEL,
         recommended_compute=DEFAULT_CPU_COMPUTE,
         recommended_device="cpu",
+    )
+
+
+def _nvidia_smi_gpu() -> tuple[str, float]:
+    """Return (name, vram_gb) from nvidia-smi, or ("", 0.0) if unavailable."""
+    try:
+        out = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=name,memory.total",
+             "--format=csv,noheader,nounits"],
+            encoding="utf-8", timeout=5,
+        ).strip().splitlines()
+        if out:
+            name, mib = out[0].split(",")
+            return name.strip(), round(float(mib) / 1024, 1)
+    except Exception:
+        log.debug("nvidia-smi query failed", exc_info=True)
+    return "", 0.0
+
+
+def _gpu_info(name: str, vram_gb: float) -> GPUInfo:
+    """Build a GPUInfo with a model recommendation scaled to available VRAM."""
+    log.info("CUDA GPU found: %s (%.1f GB VRAM)", name, vram_gb)
+    if vram_gb >= 6:
+        model = DEFAULT_GPU_MODEL
+    elif vram_gb >= 2:
+        model = "small.en"
+    else:
+        # Known CUDA device but little/unknown VRAM — stay conservative.
+        model = "tiny.en"
+    return GPUInfo(
+        cuda_available=True,
+        gpu_name=name,
+        vram_gb=round(vram_gb, 1),
+        recommended_model=model,
+        recommended_compute=DEFAULT_GPU_COMPUTE,
+        recommended_device="cuda",
     )
